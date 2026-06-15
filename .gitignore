@@ -1,0 +1,13 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# PyInstaller build directories
+build/
+
+# Local configuration
+.vscode/
+.idea/
+*.spec
