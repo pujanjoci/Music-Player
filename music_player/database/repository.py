@@ -36,25 +36,6 @@ class MusicRepository:
             # Check if this filepath already exists (case-insensitive)
             cursor.execute("SELECT id FROM songs WHERE LOWER(filepath) = LOWER(?)", (song.filepath,))
             exists_filepath = cursor.fetchone()
-            
-            if not exists_filepath:
-                # File path doesn't exist yet (this is a new import)
-                filename = os.path.basename(song.filepath).lower()
-                cursor.execute("SELECT filepath, title FROM songs")
-                all_songs = cursor.fetchall()
-                for row in all_songs:
-                    row_filepath = row['filepath']
-                    row_title = row['title']
-                    
-                    # Check duplicate filename (e.g. "song.mp3" == "song.mp3")
-                    if os.path.basename(row_filepath).lower() == filename:
-                        logger.info(f"Skipping duplicate song by filename: {song.filepath}")
-                        return
-                    
-                    # Check duplicate metadata title
-                    if song.title and row_title and song.title.strip().lower() == row_title.strip().lower():
-                        logger.info(f"Skipping duplicate song by title: {song.filepath}")
-                        return
 
             # 1. Add / Resolve Artist
             artist_id = None
@@ -674,3 +655,19 @@ class MusicRepository:
         finally:
             conn.close()
         return genres
+
+    @classmethod
+    def delete_song(cls, filepath: str) -> None:
+        """Deletes a song and all related entries via cascade constraints."""
+        conn = DbConnection.get_connection()
+        cursor = conn.cursor()
+        try:
+            cursor.execute("DELETE FROM songs WHERE LOWER(filepath) = LOWER(?)", (filepath,))
+            conn.commit()
+            logger.info(f"Deleted song from database: {filepath}")
+        except Exception as e:
+            conn.rollback()
+            logger.error(f"Error deleting song from database {filepath}: {e}", exc_info=True)
+        finally:
+            conn.close()
+

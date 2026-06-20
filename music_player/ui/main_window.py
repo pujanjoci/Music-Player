@@ -1,8 +1,8 @@
 import os
 import logging
 from typing import List, Optional, Dict, Any
-from PySide6.QtWidgets import QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QFileDialog, QSplitter, QFrame, QInputDialog, QMessageBox, QLineEdit
-from PySide6.QtCore import Qt, Slot
+from PySide6.QtWidgets import QMainWindow, QWidget, QHBoxLayout, QVBoxLayout, QFileDialog, QSplitter, QFrame, QInputDialog, QMessageBox, QLineEdit, QStackedWidget
+from PySide6.QtCore import Qt, Slot, QUrl
 from PySide6.QtGui import QPixmap, QColor, QIcon
 from PySide6.QtMultimedia import QMediaPlayer
 
@@ -19,6 +19,7 @@ from music_player.ui.widgets.sidebar import Sidebar
 from music_player.ui.widgets.song_list import SongListWidget
 from music_player.ui.widgets.player_controls import PlayerControls
 from music_player.ui.widgets.now_playing_panel import NowPlayingPanel
+from music_player.ui.widgets.mobile_player_view import MobilePlayerView
 from music_player.ui.stylesheet import DARK_STYLESHEET
 from music_player.services.artwork_loader import ArtworkLoader
 from music_player.ui.dialogs.edit_metadata_dialog import EditMetadataDialog
@@ -77,10 +78,20 @@ class MainWindow(QMainWindow):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
+        # QStackedWidget to support responsive Desktop / Mobile Views
+        self.view_stack = QStackedWidget(self.central_widget)
+        main_layout.addWidget(self.view_stack)
+
+        # --- Desktop View Container ---
+        self.desktop_view_widget = QWidget(self.view_stack)
+        desktop_layout = QVBoxLayout(self.desktop_view_widget)
+        desktop_layout.setContentsMargins(0, 0, 0, 0)
+        desktop_layout.setSpacing(0)
+
         # Main splitter dividing Sidebar and Library List Grid (2-column layout)
-        self.splitter = QSplitter(Qt.Orientation.Horizontal, self.central_widget)
+        self.splitter = QSplitter(Qt.Orientation.Horizontal, self.desktop_view_widget)
         self.splitter.setChildrenCollapsible(False)
-        main_layout.addWidget(self.splitter, 1)
+        desktop_layout.addWidget(self.splitter, 1)
 
         # --- Column 1: Sidebar ---
         self.left_panel = QFrame(self.splitter)
@@ -119,8 +130,14 @@ class MainWindow(QMainWindow):
         self.splitter.setSizes([220, 630, 250])
 
         # --- Bottom Panel: Player Control Bar ---
-        self.player_controls = PlayerControls(self.central_widget)
-        main_layout.addWidget(self.player_controls)
+        self.player_controls = PlayerControls(self.desktop_view_widget)
+        desktop_layout.addWidget(self.player_controls)
+
+        self.view_stack.addWidget(self.desktop_view_widget)
+
+        # --- Mobile View Container ---
+        self.mobile_view_widget = MobilePlayerView(self.view_stack)
+        self.view_stack.addWidget(self.mobile_view_widget)
 
         # --- Status Bar ---
         self.statusBar().showMessage("Ready")
@@ -152,6 +169,7 @@ class MainWindow(QMainWindow):
         self.song_list.refresh_clicked.connect(self._on_refresh_clicked)
         self.song_list.favorite_toggled.connect(self._on_list_favorite_toggled)
         self.song_list.edit_song_requested.connect(self._on_edit_song_requested)
+        self.song_list.delete_song_requested.connect(self._on_delete_song_requested)
         self.song_list.search_bar.textChanged.connect(self._on_search_text_changed)
         self.song_list.add_to_playlist_requested.connect(self._on_add_to_playlist)
         self.song_list.remove_from_playlist_requested.connect(self._on_remove_from_playlist)
@@ -173,9 +191,23 @@ class MainWindow(QMainWindow):
 
         # Audio Player Signals
         self.audio_player.position_changed.connect(self.player_controls.update_position)
+        self.audio_player.position_changed.connect(self.mobile_view_widget.update_position)
         self.audio_player.duration_changed.connect(self._on_player_duration_changed)
         self.audio_player.state_changed.connect(self.player_controls.set_playback_state)
+        self.audio_player.state_changed.connect(self.mobile_view_widget.set_playback_state)
         self.audio_player.song_finished.connect(self._on_song_finished)
+
+        # Mobile View Actions
+        self.mobile_view_widget.play_clicked.connect(self._on_play_clicked)
+        self.mobile_view_widget.pause_clicked.connect(self._on_pause_clicked)
+        self.mobile_view_widget.prev_clicked.connect(self._on_prev_clicked)
+        self.mobile_view_widget.next_clicked.connect(self._on_next_clicked)
+        self.mobile_view_widget.seek_requested.connect(self.audio_player.set_position)
+        self.mobile_view_widget.repeat_toggled.connect(self._on_mobile_repeat_changed)
+        self.mobile_view_widget.favorite_toggled.connect(self._on_bottom_favorite_toggled)
+        self.mobile_view_widget.song_selected.connect(self._on_mobile_song_selected)
+        self.mobile_view_widget.edit_song_requested.connect(self._on_edit_song_requested)
+        self.mobile_view_widget.delete_song_requested.connect(self._on_delete_song_requested)
 
     def _load_initial_library(self) -> None:
         """Loads cached song list from the database on startup."""
@@ -283,6 +315,7 @@ class MainWindow(QMainWindow):
         songs = MusicRepository.get_all_songs()
         self.song_list.set_view_data("tracks", songs)
         self.play_queue.set_songs(songs, start_index=0)
+        self.mobile_view_widget.set_songs(songs)
 
         current = self.audio_player.get_current_song()
         if current:
@@ -295,6 +328,7 @@ class MainWindow(QMainWindow):
         songs = MusicRepository.get_favorites()
         self.song_list.set_view_data("tracks", songs)
         self.play_queue.set_songs(songs, start_index=0)
+        self.mobile_view_widget.set_songs(songs)
 
         current = self.audio_player.get_current_song()
         if current:
@@ -349,6 +383,7 @@ class MainWindow(QMainWindow):
         songs = MusicRepository.get_songs_by_folder(folder_path)
         self.song_list.set_view_data("tracks", songs)
         self.play_queue.set_songs(songs, start_index=0)
+        self.mobile_view_widget.set_songs(songs)
 
         current = self.audio_player.get_current_song()
         if current:
@@ -427,6 +462,7 @@ class MainWindow(QMainWindow):
         songs = MusicRepository.get_songs_by_playlist(playlist_id)
         self.song_list.set_view_data("tracks", songs)
         self.play_queue.set_songs(songs, start_index=0)
+        self.mobile_view_widget.set_songs(songs)
 
         current = self.audio_player.get_current_song()
         if current:
@@ -498,18 +534,21 @@ class MainWindow(QMainWindow):
         songs = MusicRepository.get_songs_by_album(album_name)
         self.song_list.set_view_data("tracks", songs)
         self.play_queue.set_songs(songs, start_index=0)
+        self.mobile_view_widget.set_songs(songs)
 
     @Slot(str)
     def _on_artist_double_clicked(self, artist_name: str) -> None:
         songs = MusicRepository.get_songs_by_artist(artist_name)
         self.song_list.set_view_data("tracks", songs)
         self.play_queue.set_songs(songs, start_index=0)
+        self.mobile_view_widget.set_songs(songs)
 
     @Slot(str)
     def _on_folder_double_clicked(self, folder_path: str) -> None:
         songs = MusicRepository.get_songs_by_folder(folder_path)
         self.song_list.set_view_data("tracks", songs)
         self.play_queue.set_songs(songs, start_index=0)
+        self.mobile_view_widget.set_songs(songs)
 
     @Slot(str)
     def _on_genre_double_clicked(self, genre_name: str) -> None:
@@ -535,6 +574,7 @@ class MainWindow(QMainWindow):
 
         self.song_list.set_view_data("tracks", songs)
         self.play_queue.set_songs(songs, start_index=0)
+        self.mobile_view_widget.set_songs(songs)
 
     # --- Playback Logic & Sync ---
 
@@ -552,6 +592,7 @@ class MainWindow(QMainWindow):
         # 2. Update player controls metadata
         self.player_controls.set_active_song(song, None)
         self.now_playing_panel.set_active_song(song, None)
+        self.mobile_view_widget.set_active_song(song, None)
 
         # 3. Load Album Art in background
         if self.active_artwork_loader and self.active_artwork_loader.isRunning():
@@ -582,6 +623,7 @@ class MainWindow(QMainWindow):
         # Update bottom bar mini artwork and right panel artwork
         self.player_controls.set_active_song(current_song, artwork_pixmap)
         self.now_playing_panel.set_active_song(current_song, artwork_pixmap)
+        self.mobile_view_widget.set_active_song(current_song, artwork_pixmap)
 
     @Slot(Song, bool)
     def _on_list_favorite_toggled(self, song: Song, is_fav: bool) -> None:
@@ -745,6 +787,7 @@ class MainWindow(QMainWindow):
         self.audio_player.stop()
         self.player_controls.set_active_song(None)
         self.now_playing_panel.set_active_song(None)
+        self.mobile_view_widget.set_active_song(None)
         self.statusBar().showMessage("Playback stopped")
 
     @Slot()
@@ -791,6 +834,7 @@ class MainWindow(QMainWindow):
     @Slot(RepeatMode)
     def _on_repeat_mode_changed(self, mode: RepeatMode) -> None:
         self.play_queue.set_repeat_mode(mode)
+        self.mobile_view_widget.set_repeat_mode(mode)
         logger.info(f"Repeat mode set to: {mode.name}")
 
     @Slot(int)
@@ -805,6 +849,112 @@ class MainWindow(QMainWindow):
                 current_song.duration = duration_sec
                 MusicRepository.update_song_duration(current_song.filepath, duration_sec)
                 self._update_song_in_list_data(current_song)
+
+    @Slot(RepeatMode)
+    def _on_mobile_repeat_changed(self, mode: RepeatMode) -> None:
+        """Synchronizes repeat mode from mobile view to play queue and desktop controls."""
+        self.play_queue.set_repeat_mode(mode)
+        self.player_controls.set_repeat_mode(mode)
+        logger.info(f"Repeat mode updated from mobile: {mode.name}")
+
+    @Slot(Song, int)
+    def _on_mobile_song_selected(self, song: Song, index: int) -> None:
+        """Handles song selection from mobile library list."""
+        self.play_queue.set_songs(self.mobile_view_widget._all_songs, start_index=index)
+        self._play_song(song)
+
+    @Slot(Song)
+    def _on_delete_song_requested(self, song: Song) -> None:
+        """Prompts the user to delete a song from the library catalog and optionally from storage."""
+        if not song:
+            return
+        
+        # 1. Ask for confirmation
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Delete Song")
+        msg.setText(f"How would you like to delete '{song.display_title}'?")
+        msg.setInformativeText("Removing it from library will keep the file on disk.\nDeleting the file is permanent.")
+        
+        delete_file_btn = msg.addButton("Delete File", QMessageBox.ButtonRole.DestructiveRole)
+        remove_lib_btn = msg.addButton("Remove from Library", QMessageBox.ButtonRole.ActionRole)
+        cancel_btn = msg.addButton(QMessageBox.StandardButton.Cancel)
+        
+        # Style the dialog to fit the dark theme QSS
+        msg.setStyleSheet(self.styleSheet())
+        
+        msg.exec()
+        clicked = msg.clickedButton()
+        
+        if clicked == cancel_btn:
+            return
+        
+        filepath = song.filepath
+        
+        # If the song is currently playing, stop and unload it first to release any file lock
+        current_song = self.audio_player.get_current_song()
+        if current_song and current_song.filepath == filepath:
+            self.audio_player.unload()
+            self.player_controls.set_active_song(None)
+            self.now_playing_panel.set_active_song(None)
+            self.mobile_view_widget.set_active_song(None)
+            self.statusBar().showMessage("Playback stopped as active song was deleted")
+            
+        # Delete file physically if requested
+        if clicked == delete_file_btn:
+            try:
+                if os.path.exists(filepath):
+                    os.remove(filepath)
+                    logger.info(f"Permanently deleted file from storage: {filepath}")
+            except Exception as e:
+                logger.error(f"Failed to delete physical file {filepath}: {e}", exc_info=True)
+                QMessageBox.warning(self, "Error", f"Could not delete physical file: {e}\nRemoving from library catalog instead.")
+        
+        # Delete database entry
+        MusicRepository.delete_song(filepath)
+        
+        # Remove from the queue
+        self.play_queue.remove_song(filepath)
+        
+        # Refresh the UI lists
+        all_songs = MusicRepository.get_all_songs()
+        self.sidebar.set_library_count(len(all_songs))
+
+        # Get updated songs for active view
+        if self.song_list.active_playlist_id is not None:
+            songs = MusicRepository.get_songs_by_playlist(self.song_list.active_playlist_id)
+            self.song_list.set_view_data("tracks", songs)
+            self.mobile_view_widget.set_songs(songs)
+        elif self._current_view_favorites:
+            songs = MusicRepository.get_favorites()
+            self.song_list.set_view_data("tracks", songs)
+            self.mobile_view_widget.set_songs(songs)
+        elif self.song_list._view_type == "tracks":
+            self.song_list.set_view_data("tracks", all_songs)
+            self.mobile_view_widget.set_songs(all_songs)
+        elif self.song_list._view_type == "albums":
+            self._show_albums()
+        elif self.song_list._view_type == "artists":
+            self._show_artists()
+        elif self.song_list._view_type == "folders":
+            self.song_list.set_view_data("folders", MusicRepository.get_folders())
+        elif self.song_list._view_type == "genres":
+            self._show_genres()
+            
+        # Select the currently playing song in the list if still playing
+        current = self.audio_player.get_current_song()
+        if current:
+            self.song_list.select_song_by_filepath(current.filepath)
+            self.mobile_view_widget.set_active_song(current, self.player_controls.mini_art.pixmap())
+        
+        self.statusBar().showMessage(f"Deleted song: {song.display_title}")
+
+    def resizeEvent(self, event) -> None:
+        """Transitions between Desktop split-view and Mobile portrait view based on window width."""
+        super().resizeEvent(event)
+        if self.width() < 550:
+            self.view_stack.setCurrentIndex(1)
+        else:
+            self.view_stack.setCurrentIndex(0)
 
     def closeEvent(self, event) -> None:
         """Clean up background threads on exit."""

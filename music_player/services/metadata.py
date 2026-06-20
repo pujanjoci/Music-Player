@@ -173,10 +173,21 @@ class MetadataService:
         if not MUTAGEN_AVAILABLE:
             return False
         try:
+            audio = mutagen.File(filepath)
             ext = os.path.splitext(filepath)[1].lower()
-            if ext == '.mp3':
+            
+            # MP3
+            if (audio is not None and isinstance(audio, MP3)) or (audio is None and ext == '.mp3'):
                 try:
-                    easy_tags = EasyID3(filepath)
+                    try:
+                        easy_tags = EasyID3(filepath)
+                    except Exception:
+                        try:
+                            id3_temp = ID3()
+                            id3_temp.save(filepath)
+                        except Exception:
+                            pass
+                        easy_tags = EasyID3(filepath)
                     easy_tags['title'] = title
                     easy_tags['artist'] = artist
                     easy_tags['album'] = album
@@ -185,7 +196,15 @@ class MetadataService:
                     return True
                 except Exception:
                     try:
-                        id3_tags = ID3(filepath)
+                        try:
+                            id3_tags = ID3(filepath)
+                        except Exception:
+                            try:
+                                id3_temp = ID3()
+                                id3_temp.save(filepath)
+                            except Exception:
+                                pass
+                            id3_tags = ID3(filepath)
                         from mutagen.id3 import TIT2, TPE1, TALB, TCON
                         id3_tags['TIT2'] = TIT2(encoding=3, text=title)
                         id3_tags['TPE1'] = TPE1(encoding=3, text=artist)
@@ -195,24 +214,33 @@ class MetadataService:
                         return True
                     except Exception:
                         pass
-            elif ext == '.flac':
-                audio = FLAC(filepath)
+            
+            # FLAC
+            elif (audio is not None and isinstance(audio, FLAC)) or (audio is None and ext == '.flac'):
+                if audio is None:
+                    audio = FLAC(filepath)
                 audio['title'] = title
                 audio['artist'] = artist
                 audio['album'] = album
                 audio['genre'] = genre
                 audio.save()
                 return True
-            elif ext in ('.ogg', '.oga'):
-                audio = OggVorbis(filepath)
+                
+            # OGG
+            elif (audio is not None and isinstance(audio, OggVorbis)) or (audio is None and ext in ('.ogg', '.oga')):
+                if audio is None:
+                    audio = OggVorbis(filepath)
                 audio['title'] = title
                 audio['artist'] = artist
                 audio['album'] = album
                 audio['genre'] = genre
                 audio.save()
                 return True
-            elif ext in ('.m4a', '.mp4'):
-                audio = MP4(filepath)
+                
+            # MP4 / M4A
+            elif (audio is not None and isinstance(audio, MP4)) or (audio is None and ext in ('.m4a', '.mp4')):
+                if audio is None:
+                    audio = MP4(filepath)
                 audio['\xa9nam'] = title
                 audio['\xa9ART'] = artist
                 audio['\xa9alb'] = album

@@ -19,6 +19,7 @@ class SongListWidget(QWidget):
     tab_changed = Signal(str)                      # Emits active view type ('tracks', 'albums', etc.)
     refresh_clicked = Signal()                     # Emits when circular refresh icon is clicked
     favorite_toggled = Signal(Song, bool)          # Emits (song, is_favorite)
+    delete_song_requested = Signal(Song)           # Emits (song) for deletion
     edit_song_requested = Signal(Song)             # Emits (song) for metadata editing
     add_to_playlist_requested = Signal(Song, int)          # Emits (song, playlist_id)
     remove_from_playlist_requested = Signal(Song, int)     # Emits (song, playlist_id)
@@ -555,6 +556,11 @@ class SongListWidget(QWidget):
             remove_playlist_action = QAction("Remove from Playlist", self)
             remove_playlist_action.triggered.connect(lambda _checked=False, s=song: self.remove_from_playlist_requested.emit(s, self.active_playlist_id))
             menu.addAction(remove_playlist_action)
+            
+        menu.addSeparator()
+        delete_action = QAction("Delete...", self)
+        delete_action.triggered.connect(lambda _checked=False, s=song: self.delete_song_requested.emit(s))
+        menu.addAction(delete_action)
         
         menu.exec(self.table_widget.mapToGlobal(pos))
 

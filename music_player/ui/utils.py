@@ -264,6 +264,17 @@ def create_vector_icon(icon_type: str, color_str: str = "#CBD5E1", size: int = 3
         # Arrow head pointing clockwise (at x=20, y=10)
         painter.drawLine(20 * s, 10 * s, 24 * s, 6 * s)
         painter.drawLine(24 * s, 6 * s, 24 * s, 12 * s)
+    elif icon_type == "back":
+        # Draw chevron left pointing
+        path = QPainterPath()
+        path.moveTo(20 * s, 8 * s)
+        path.lineTo(12 * s, 16 * s)
+        path.lineTo(20 * s, 24 * s)
+        
+        pen = QPen(color, 2.5 * s, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
+        painter.setPen(pen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.drawPath(path)
         
     painter.end()
     return QIcon(pixmap)

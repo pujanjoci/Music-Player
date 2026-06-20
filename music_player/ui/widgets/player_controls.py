@@ -308,6 +308,11 @@ class PlayerControls(QFrame):
         self.volume_slider.setValue(volume)
         self._update_volume_icon(volume, self.btn_mute.isChecked())
 
+    def set_repeat_mode(self, mode: RepeatMode) -> None:
+        self._current_repeat = mode
+        self.btn_repeat.setIcon(create_vector_icon("repeat", extra=mode.value, size=20))
+        self.btn_repeat.setToolTip(f"Repeat: {mode.name.capitalize()}")
+
     # --- Private Handlers ---
 
     def _on_play_pause_clicked(self) -> None:

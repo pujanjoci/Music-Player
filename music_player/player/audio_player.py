@@ -54,6 +54,22 @@ class AudioPlayer(QObject):
             self._is_switching = False
             logger.error(f"Failed to play song {song.filepath}: {e}", exc_info=True)
 
+    def release_file_lock(self) -> None:
+        """Temporarily unloads the source to release the file lock on Windows."""
+        if self._current_song:
+            self._pre_lock_position = self._player.position()
+            self._pre_lock_state = self._player.playbackState()
+            self._player.setSource(QUrl())
+            logger.info("Temporarily unloaded source to release file lock.")
+
+    def restore_file_lock(self) -> None:
+        """Reloads the source and restores position/state."""
+        if self._current_song:
+            self._is_switching = True
+            url = QUrl.fromLocalFile(self._current_song.filepath)
+            self._player.setSource(url)
+            logger.info("Reloaded source to restore playing file.")
+
     def play(self) -> None:
         """Resumes playback if paused or stopped."""
         self._player.play()
@@ -65,6 +81,13 @@ class AudioPlayer(QObject):
     def stop(self) -> None:
         """Stops playback."""
         self._player.stop()
+
+    def unload(self) -> None:
+        """Stops playback and completely unloads the media source."""
+        self._player.stop()
+        self._player.setSource(QUrl())
+        self._current_song = None
+        self._target_filepath = ""
 
     def get_state(self) -> QMediaPlayer.PlaybackState:
         """Returns the current playback state."""
@@ -132,15 +155,27 @@ class AudioPlayer(QObject):
 
                     # Play the song if it loaded successfully
                     if status != QMediaPlayer.MediaStatus.InvalidMedia:
-                        self._player.play()
+                        if hasattr(self, '_pre_lock_state') and self._pre_lock_state == QMediaPlayer.PlaybackState.PlayingState:
+                            self._player.play()
+                        elif not hasattr(self, '_pre_lock_state'):
+                            self._player.play()
+
+                    # Restore position if pre-lock position exists
+                    if hasattr(self, '_pre_lock_position') and self._pre_lock_position > 0:
+                        self._player.setPosition(self._pre_lock_position)
+                        self.position_changed.emit(self._pre_lock_position)
+                        del self._pre_lock_position
+                    else:
+                        # Reset the slider to the beginning of the new song.
+                        self.position_changed.emit(0)
+
+                    if hasattr(self, '_pre_lock_state'):
+                        del self._pre_lock_state
 
                     # Sync the slider range for the new song.
                     dur = self._player.duration()
                     if dur > 0:
                         self.duration_changed.emit(dur)
-
-                    # Reset the slider to the beginning of the new song.
-                    self.position_changed.emit(0)
             return
 
         if status == QMediaPlayer.MediaStatus.EndOfMedia:

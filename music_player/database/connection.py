@@ -114,16 +114,12 @@ class DbConnection:
                 );
             """)
 
-            # Run normalization and duplicate cleanup migration on startup
+            # Run normalization on startup
             cursor.execute("SELECT id, filepath, title FROM songs ORDER BY id ASC")
             songs = cursor.fetchall()
-            seen_filenames = set()
-            seen_titles = set()
             songs_to_delete = []
             for song in songs:
                 fp = song['filepath']
-                title = song['title']
-                filename = os.path.basename(fp).lower()
                 
                 # Normalize filepath first
                 norm_fp = fp.replace('\\', '/')
@@ -133,25 +129,8 @@ class DbConnection:
                     dup = cursor.fetchone()
                     if dup:
                         songs_to_delete.append(song['id'])
-                        continue
                     else:
                         cursor.execute("UPDATE songs SET filepath = ? WHERE id = ?", (norm_fp, song['id']))
-                        fp = norm_fp
-                
-                # Check duplicates by filename
-                if filename in seen_filenames:
-                    songs_to_delete.append(song['id'])
-                    continue
-                
-                # Check duplicates by title
-                norm_title = title.strip().lower() if title else ""
-                if norm_title and norm_title in seen_titles:
-                    songs_to_delete.append(song['id'])
-                    continue
-                    
-                seen_filenames.add(filename)
-                if norm_title:
-                    seen_titles.add(norm_title)
                     
             if songs_to_delete:
                 cursor.executemany("DELETE FROM songs WHERE id = ?", [(sid,) for sid in songs_to_delete])

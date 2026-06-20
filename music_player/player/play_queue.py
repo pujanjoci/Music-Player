@@ -164,3 +164,45 @@ class PlayQueue:
         indices = list(range(len(self._original_songs)))
         random.shuffle(indices)
         self._shuffled_indices = indices
+
+    def remove_song(self, filepath: str) -> None:
+        """Removes a song from the queue by its filepath and updates pointers."""
+        target_idx = -1
+        for i, s in enumerate(self._original_songs):
+            if s.filepath == filepath:
+                target_idx = i
+                break
+        
+        if target_idx == -1:
+            return
+
+        current_actual = self._get_actual_index()
+        
+        # Remove from original list
+        self._original_songs.pop(target_idx)
+        
+        if not self._original_songs:
+            self.clear()
+            return
+            
+        # Adjust indices and shuffle map
+        if self._shuffle_enabled:
+            # Re-generate shuffled indices for the new size
+            if current_actual == target_idx:
+                # The playing song was deleted
+                self._generate_shuffled_indices()
+                self._current_pointer = 0 if self._original_songs else -1
+            else:
+                new_actual = current_actual
+                if current_actual > target_idx:
+                    new_actual -= 1
+                self._generate_shuffled_indices()
+                if new_actual in self._shuffled_indices:
+                    self._current_pointer = self._shuffled_indices.index(new_actual)
+        else:
+            if current_actual == target_idx:
+                if self._current_pointer >= len(self._original_songs):
+                    self._current_pointer = len(self._original_songs) - 1
+            elif current_actual > target_idx:
+                self._current_pointer -= 1
+
